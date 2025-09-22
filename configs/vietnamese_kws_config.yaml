@@ -1,0 +1,60 @@
+# Vietnamese Keyword Spotting (KWS) Configuration
+# Conservative settings for 10 Vietnamese commands + 1 negative class
+
+data:
+  max_samples_train: null          # Use ALL training samples for better performance
+  max_samples_val: null            # Use ALL validation samples
+
+# Model configurations
+models:
+  teacher:
+    num_classes: 10               # 9 keywords + 1 negative
+    hidden_size: 512              # PhoWhisper adaptation size
+    dropout: 0.1
+    freeze_encoder: true          # Freeze PhoWhisper encoder weights
+    
+  student:
+    num_classes: 10
+    dropout: 0.2                  # MobileNetV3 dropout
+    pretrained: false             # Use pretrained ImageNet weights
+    
+  tiny_student:
+    num_classes: 10
+    dropout: 0.1                  # Reduced dropout for better learning
+    pretrained: true              # Use pretrained ImageNet weights for better initialization
+
+# Training configuration
+training:
+  batch_size: 32                # Good batch size for classification
+  num_epochs: 50                  # Much more epochs for knowledge distillation
+  num_workers: 4
+  early_stopping_patience: 15     # More patience for better convergence
+  
+  optimizer:
+    learning_rate: 0.002          # Higher initial learning rate for faster convergence
+    weight_decay: 0.005           # Reduced weight decay for less aggressive regularization
+
+# Knowledge distillation configuration  
+distillation:
+  temperature: 6.0                # Higher temperature for softer knowledge transfer
+  alpha: 0.8                      # More weight on soft distillation (teacher knowledge)
+  beta: 0.2                       # Less weight on hard classification loss
+  feature_loss_weight: 0.3        # Reduced feature matching weight for stability
+
+# Logging
+logging:
+  log_every: 10                   # Log every 10 batches
+  save_best_only: true
+
+# Keywords for reference - Using most frequent words from dataset
+keywords:
+  0: "có"        # Have/exist (2,243 occurrences - 1.38%)
+  1: "là"        # Is/be (1,854 occurrences - 1.14%)
+  2: "không"     # No/not (1,838 occurrences - 1.13%)
+  3: "một"       # One/a (1,777 occurrences - 1.10%)
+  4: "của"       # Of/belonging to (1,698 occurrences - 1.05%)
+  5: "và"        # And (1,583 occurrences - 0.98%)
+  6: "người"     # Person/people (1,393 occurrences - 0.86%)
+  7: "những"     # The/those (1,366 occurrences - 0.84%)
+  8: "tôi"       # I/me (1,291 occurrences - 0.80%)
+  9: "negative"  # Non-keyword speech
