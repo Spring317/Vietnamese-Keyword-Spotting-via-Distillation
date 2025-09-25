@@ -23,7 +23,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.data.vlsp2020_kws_dataset import create_vlsp2020_dataloader, VLSP2020KWSDataset
+from src.data.vietnamese_kws_dataset import create_kws_dataloader, VietnameseKWSDataset
 from src.models.kws_models import (
     create_kws_teacher, 
     create_kws_student, 
@@ -69,16 +69,11 @@ class KWSTrainer:
         self.config = config
         self.class_weights = class_weights
         
-        # Setup optimizer - handle different config structures
-        learning_rate = config['training'].get('learning_rate', 
-                                              config['training'].get('optimizer', {}).get('learning_rate', 0.001))
-        weight_decay = config['training'].get('weight_decay',
-                                            config['training'].get('optimizer', {}).get('weight_decay', 0.0001))
-        
+        # Setup optimizer
         self.optimizer = torch.optim.AdamW(
             self.student_model.parameters(),
-            lr=learning_rate,
-            weight_decay=weight_decay
+            lr=config['training']['optimizer']['learning_rate'],
+            weight_decay=config['training']['optimizer']['weight_decay']
         )
         
         # Setup scheduler with warmup
@@ -90,18 +85,18 @@ class KWSTrainer:
         from torch.optim.lr_scheduler import OneCycleLR
         self.scheduler = OneCycleLR(
             self.optimizer,
-            max_lr=learning_rate,
+            max_lr=config['training']['optimizer']['learning_rate'],
             total_steps=total_steps,
             pct_start=warmup_steps / total_steps,
             anneal_strategy='cos'
         )
         
-        # Setup distillation loss - handle different config structures
+        # Setup distillation loss
         self.criterion = KWSDistillationLoss(
             temperature=config['distillation']['temperature'],
             alpha=config['distillation']['alpha'],
             beta=config['distillation']['beta'],
-            feature_loss_weight=config['distillation'].get('feature_loss_weight', 0.1),
+            feature_loss_weight=config['distillation']['feature_loss_weight'],
             class_weights=self.class_weights
         )
         
@@ -219,7 +214,7 @@ class KWSTrainer:
         target_names = []
         for class_id in unique_labels:
             if class_id < 9:  # Keywords are 0-8
-                keyword = list(VLSP2020KWSDataset.KEYWORDS.values())[class_id]
+                keyword = list(VietnameseKWSDataset.KEYWORDS.values())[class_id]
                 target_names.append(f"Class_{class_id}_{keyword}")
             else:  # Negative class is 9
                 target_names.append(f"Class_{class_id}_Negative")
@@ -326,11 +321,12 @@ class KWSTrainer:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Vietnamese KWS Training with VLSP2020 Dataset')
+    parser = argparse.ArgumentParser(description='Vietnamese KWS Training')
     parser.add_argument('--config', type=str, required=True, help='Configuration file')
     parser.add_argument('--student_model', type=str, required=True,
                        choices=['standard', 'tiny'], help='Student model type')
-    parser.add_argument('--output_dir', type=str, default='./outputs_vlsp2020_kws', help='Output directory')
+    parser.add_argument('--data_dir', type=str, default='./data/vivos', help='Data directory')
+    parser.add_argument('--output_dir', type=str, default='./outputs_kws', help='Output directory')
     parser.add_argument('--use_dummy_data', action='store_true', help='Use dummy data for testing')
     
     args = parser.parse_args()
@@ -352,7 +348,7 @@ def main():
     
     # Setup logging
     logger = setup_logging(log_dir)
-    logger.info(f"Starting Vietnamese KWS training with VLSP2020 dataset")
+    logger.info(f"Starting Vietnamese KWS training")
     logger.info(f"Config: {args.config}")
     logger.info(f"Student model: {args.student_model}")
     
@@ -362,19 +358,21 @@ def main():
     
     # Create data loaders
     logger.info("Creating data loaders...")
-    train_loader, train_dataset = create_vlsp2020_dataloader(
+    train_loader, train_dataset = create_kws_dataloader(
+        data_dir=args.data_dir,
         split="train",
         batch_size=config['training']['batch_size'],
         shuffle=True,
-        max_samples=config.get('data', {}).get('max_samples_train') or config['training'].get('max_train_samples'),
+        max_samples=config['data'].get('max_samples_train'),
         use_dummy_data=args.use_dummy_data
     )
     
-    val_loader, val_dataset = create_vlsp2020_dataloader(
+    val_loader, val_dataset = create_kws_dataloader(
+        data_dir=args.data_dir,
         split="test",
         batch_size=config['training']['batch_size'],
         shuffle=False,
-        max_samples=config.get('data', {}).get('max_samples_val') or config['training'].get('max_val_samples'),
+        max_samples=config['data'].get('max_samples_val'),
         use_dummy_data=args.use_dummy_data
     )
     
@@ -388,25 +386,12 @@ def main():
     
     # Create models
     logger.info("Creating models...")
-    teacher_config = config['models']['teacher'] if 'models' in config else config['model']['teacher']
-    
-    # Filter out unsupported parameters for teacher model
-    teacher_params = {k: v for k, v in teacher_config.items() 
-                     if k in ['num_classes', 'hidden_size', 'dropout', 'freeze_encoder']}
-    teacher_model = create_kws_teacher(**teacher_params)
+    teacher_model = create_kws_teacher(**config['models']['teacher'])
     
     if args.student_model == 'standard':
-        student_config = config['models']['student'] if 'models' in config else config['model']['students']['standard']
-        # Filter out unsupported parameters for student model
-        student_params = {k: v for k, v in student_config.items() 
-                         if k in ['num_classes', 'dropout', 'pretrained']}
-        student_model = create_kws_student(**student_params)
+        student_model = create_kws_student(**config['models']['student'])
     elif args.student_model == 'tiny':
-        tiny_config = config['models']['tiny_student'] if 'models' in config else config['model']['students']['tiny']
-        # Filter out unsupported parameters for tiny model
-        tiny_params = {k: v for k, v in tiny_config.items() 
-                      if k in ['num_classes', 'dropout', 'pretrained']}
-        student_model = create_tiny_kws_student(**tiny_params)
+        student_model = create_tiny_kws_student(**config['models']['tiny_student'])
     else:
         raise ValueError(f"Unknown student model: {args.student_model}")
     
