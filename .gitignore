@@ -1,4 +1,4 @@
-src/data
+src/data/vivos
 outputs_frequent_words_test/checkpoints/best_kws_model.pt
 ./outputs_frequent_words_test/
 
