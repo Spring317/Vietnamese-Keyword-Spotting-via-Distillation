@@ -3,6 +3,7 @@ Vietnamese Keyword Spotting (KWS) Models
 PhoWhisper teacher with ResNet18/MobileNetV3 students for 10-class classification.
 """
 
+from xml.parsers.expat import model
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +11,7 @@ from typing import Dict, Optional, Tuple
 import logging
 from transformers import WhisperModel, WhisperConfig
 import torchvision.models as models
-
+import os 
 logger = logging.getLogger(__name__)
 
 class PhoWhisperKWSTeacher(nn.Module):
@@ -34,16 +35,16 @@ class PhoWhisperKWSTeacher(nn.Module):
         # Load PhoWhisper configuration
         try:
             # Use smaller Whisper config if full PhoWhisper not available
-            whisper_config = WhisperConfig.from_pretrained("vinai/whisper-base")
+            whisper_config = WhisperConfig.from_pretrained("vinai/PhoWhisper-base")
             whisper_config.vocab_size = 51865  # PhoWhisper vocab size
             self.whisper_encoder = WhisperModel.from_pretrained(
-                "openai/whisper-base", 
+                "vinai/PhoWhisper-base", 
                 config=whisper_config
             ).encoder
         except:
             # Fallback to base Whisper if PhoWhisper not available
             logger.warning("Could not load PhoWhisper, using base Whisper encoder")
-            self.whisper_encoder = WhisperModel.from_pretrained("vinai/whisper-base").encoder
+            self.whisper_encoder = WhisperModel.from_pretrained("vinai/PhoWhisper-base").encoder
         
         # Freeze encoder if specified
         if freeze_encoder:
@@ -447,4 +448,9 @@ def create_kws_student(num_classes: int = 10, **kwargs) -> MobileNetV3KWSStudent
 
 def create_tiny_kws_student(num_classes: int = 10, **kwargs) -> ResNet18KWSStudent:
     """Create ResNet18-based KWS student model (tiny)."""
-    return ResNet18KWSStudent(num_classes=num_classes, **kwargs)
+    model = ResNet18KWSStudent(num_classes=num_classes, **kwargs)
+    if os.path.exists("outputs_whisper_resnet18_optimized/checkpoints/best_kws_model.pt"):
+        logger.info("Loading optimized ResNet18 KWS student model from checkpoint")
+        checkpoint = torch.load("outputs_whisper_resnet18_optimized/checkpoints/best_kws_model.pt", map_location='cuda', weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        return model
